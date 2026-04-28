@@ -1,0 +1,8 @@
+{
+  "tenantId": "1000xxx",
+  "siteId": "1000xxx",
+  "appKey": "your-app-key-here",
+  "appSecret": "your-app-secret-here",
+  "baseUrl": "https://t1000xxx.sb.usc1.gcp.kibocommerce.com",
+  "searchHost": "https://t1000xxx-s1000xxx.sb.usc1.gcp.kibocommerce.com"
+}

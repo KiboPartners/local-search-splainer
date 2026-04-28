@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splainer Local</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Load Preact from CDN -->
+  <script type="module">
+    import { h, render, Component } from 'https://esm.sh/preact@10.19.3';
+    import htm from 'https://esm.sh/htm@3.1.1';
+
+    // Initialize htm with Preact
+    const html = htm.bind(h);
+
+    // Collapsible component
+    class Collapsible extends Component {
+      constructor(props) {
+        super(props);
+        this.state = { isOpen: props.defaultOpen !== false };
+      }
+
+      toggle = () => {
+        this.setState({ isOpen: !this.state.isOpen });
+      }
+
+      render() {
+        const { title, children, level = 0 } = this.props;
+        const { isOpen } = this.state;
+        const indent = level * 8;
+
+        return html`
+          <div class="collapsible" style="margin-left: ${indent}px">
+            <div class="collapsible-header" onClick=${this.toggle}>
+              <span class="toggle-icon">${isOpen ? '▼' : '▶'}</span>
+              <strong>${title}</strong>
+            </div>
+            ${isOpen && html`<div class="collapsible-content">${children}</div>`}
+          </div>
+        `;
+      }
+    }
+
+    // JSON viewer component
+    function JsonViewer({ data, level = 0 }) {
+      if (data === null || data === undefined) {
+        return html`<span class="json-null">null</span>`;
+      }
+
+      if (typeof data === 'boolean') {
+        return html`<span class="json-boolean">${data.toString()}</span>`;
+      }
+
+      if (typeof data === 'number') {
+        return html`<span class="json-number">${data}</span>`;
+      }
+
+      if (typeof data === 'string') {
+        return html`<span class="json-string">"${data}"</span>`;
+      }
+
+      if (Array.isArray(data)) {
+        if (data.length === 0) {
+          return html`<span class="json-array">[]</span>`;
+        }
+
+        return html`
+          <${Collapsible} title=${`Array [${data.length}]`} level=${level} defaultOpen=${level < 2}>
+            <div class="json-array">
+              ${data.map((item, idx) => html`
+                <div class="json-item">
+                  <span class="json-key">[${idx}]:</span>
+                  <${JsonViewer} data=${item} level=${level + 1} />
+                </div>
+              `)}
+            </div>
+          <//>
+        `;
+      }
+
+      if (typeof data === 'object') {
+        const keys = Object.keys(data);
+        if (keys.length === 0) {
+          return html`<span class="json-object">{}</span>`;
+        }
+
+        return html`
+          <${Collapsible} title=${`Object {${keys.length} keys}`} level=${level} defaultOpen=${level < 1}>
+            <div class="json-object">
+              ${keys.map(key => html`
+                <div class="json-item">
+                  <span class="json-key">${key}:</span>
+                  <${JsonViewer} data=${data[key]} level=${level + 1} />
+                </div>
+              `)}
+            </div>
+          <//>
+        `;
+      }
+
+      return html`<span>${String(data)}</span>`;
+    }
+
+    // Search result component
+    function SearchResult({ doc, explain, index }) {
+      const score = explain ? explain.value : 'N/A';
+      const productCode = doc.productCode || '';
+      const productName = doc.productName || '';
+      const displayName = productCode && productName
+        ? `${productCode} - ${productName}`
+        : productCode || productName || `Doc ${index}`;
+
+      return html`
+        <div class="search-result">
+          <${Collapsible} title=${`#${index + 1}: ${displayName} (Score: ${score})`} defaultOpen=${index < 3}>
+            <div class="result-content">
+              <${Collapsible} title="Document Fields" defaultOpen=${false}>
+                <${JsonViewer} data=${doc} />
+              <//>
+
+              ${explain && html`
+                <${Collapsible} title="Score Explanation" defaultOpen=${true}>
+                  <${JsonViewer} data=${explain} />
+                <//>
+              `}
+            </div>
+          <//>
+        </div>
+      `;
+    }
+
+    // Main App component
+    class App extends Component {
+      constructor() {
+        super();
+        this.state = {
+          query: 'pump',
+          searchSettings: 'test',
+          fieldSpec: '*',
+          results: null,
+          loading: false,
+          error: null
+        };
+      }
+
+      handleSubmit = async (e) => {
+        e.preventDefault();
+        this.setState({ loading: true, error: null });
+
+        try {
+          const response = await fetch('/api/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: this.state.query,
+              searchSettings: this.state.searchSettings,
+              fieldSpec: this.state.fieldSpec
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`Search failed: ${response.status}`);
+          }
+
+          const data = await response.json();
+          this.setState({ results: data, loading: false });
+        } catch (error) {
+          this.setState({ error: error.message, loading: false });
+        }
+      }
+
+      updateField = (field) => (e) => {
+        this.setState({ [field]: e.target.value });
+      }
+
+      render() {
+        const { query, searchSettings, fieldSpec, results, loading, error } = this.state;
+
+        return html`
+          <div class="container">
+            <header>
+              <h1>Splainer Local</h1>
+              <p>Search debugging tool</p>
+            </header>
+
+            <form onSubmit=${this.handleSubmit} class="search-form">
+              <div class="form-group">
+                <label for="query">Query:</label>
+                <input
+                  type="text"
+                  id="query"
+                  value=${query}
+                  onInput=${this.updateField('query')}
+                  placeholder="Enter search query"
+                  required
+                />
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="searchSettings">Search Settings:</label>
+                  <input
+                    type="text"
+                    id="searchSettings"
+                    value=${searchSettings}
+                    onInput=${this.updateField('searchSettings')}
+                    placeholder="test"
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="fieldSpec">Field Spec:</label>
+                  <input
+                    type="text"
+                    id="fieldSpec"
+                    value=${fieldSpec}
+                    onInput=${this.updateField('fieldSpec')}
+                    placeholder="*"
+                  />
+                </div>
+              </div>
+
+              <button type="submit" disabled=${loading} class="search-button">
+                ${loading ? 'Searching...' : 'Search'}
+              </button>
+            </form>
+
+            ${error && html`
+              <div class="error">
+                <strong>Error:</strong> ${error}
+              </div>
+            `}
+
+            ${results && html`
+              <div class="results">
+                <h2>Results</h2>
+
+                <${Collapsible} title="Response Header" defaultOpen=${false}>
+                  <${JsonViewer} data=${results.responseHeader} />
+                <//>
+
+                <${Collapsible} title=${`Documents (${results.response?.numFound || 0} found)`} defaultOpen=${true}>
+                  ${results.response?.docs?.map((doc, idx) => html`
+                    <${SearchResult}
+                      key=${doc.id || idx}
+                      doc=${doc}
+                      explain=${results.debug?.explain?.[doc.id]}
+                      index=${idx}
+                    />
+                  `)}
+                <//>
+
+                ${results.facet_counts && html`
+                  <${Collapsible} title="Facets" defaultOpen=${false}>
+                    <${JsonViewer} data=${results.facet_counts} />
+                  <//>
+                `}
+
+                ${results.debug && html`
+                  <${Collapsible} title="Debug Information" defaultOpen=${false}>
+                    <${JsonViewer} data=${results.debug} />
+                  <//>
+                `}
+              </div>
+            `}
+          </div>
+        `;
+      }
+    }
+
+    // Render the app
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
+</body>
+</html>
